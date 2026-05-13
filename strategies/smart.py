@@ -55,20 +55,23 @@ class SmartStrategy(AntStrategy):
 
         pheromone_action = None
         if perception.has_food:
-            if perception.steps_taken % self.food_deposit_delay == 0:
+            if (
+                perception.steps_taken > 0
+                and perception.steps_taken % self.food_deposit_delay == 0
+            ):
                 pheromone_action = AntAction.DEPOSIT_FOOD_PHEROMONE
         else:
-            if perception.steps_taken % self.home_deposit_delay == 0:
+            if (
+                perception.steps_taken > 0
+                and perception.steps_taken % self.home_deposit_delay == 0
+            ):
                 pheromone_action = AntAction.DEPOSIT_HOME_PHEROMONE
         if pheromone_action is not None:
             mem["last_action"] = pheromone_action
             mem["last_direction"] = None
             return pheromone_action
 
-        if perception.has_food:
-            action = self.return_to_colony(mem, perception)
-        else:
-            action = self.search_food(mem, perception)
+        action = self._decide_movemement(mem, perception)
 
         if action == AntAction.MOVE_FORWARD:
             if front_cell == TerrainType.WALL or front_cell is None:
@@ -79,6 +82,14 @@ class SmartStrategy(AntStrategy):
             perception.direction if action == AntAction.MOVE_FORWARD else None
         )
         return action
+
+    def _decide_movemement(self, mem: dict, perception: AntPerception) -> AntAction:
+        """Decide which direction to move based on current state"""
+
+        if perception.has_food:
+            return self.return_to_colony(mem, perception)
+        else:
+            return self.search_food(mem, perception)
 
     def get_memory(self, ant_id: int) -> dict:
         if ant_id not in self.memory:
@@ -177,6 +188,7 @@ class SmartStrategy(AntStrategy):
         ]
 
         possible_actions = []
+        new_actions = []
 
         for action, direction in candidates:
             dx, dy = Direction.get_delta(direction)
@@ -186,9 +198,14 @@ class SmartStrategy(AntStrategy):
 
             next_pos = (mem["abs_x"] + dx, mem["abs_y"] + dy)
             if next_pos not in mem["visited"]:
-                return action
+                if action == AntAction.MOVE_FORWARD:
+                    return action
+                new_actions.append(action)
 
             possible_actions.append(action)
+
+        if new_actions:
+            return random.choice(new_actions)
 
         if possible_actions:
             return random.choice(possible_actions)
@@ -239,10 +256,12 @@ class SmartStrategy(AntStrategy):
         best_pos = None
         best_value = 0
         for pos, value in pheromones.items():
+            if pos == (0, 0):
+                continue
+
             cell_type = perception.visible_cells.get(pos)
             if cell_type == TerrainType.WALL:
                 continue
-
             if value > best_value:
                 best_value = value
                 best_pos = pos
